@@ -24,4 +24,17 @@ public class BusinessException extends RuntimeException{
     public BusinessException(String message, Exception cause) {
         super(message, cause);
     }
+
+    /**
+     * create by: Yxs
+     * description:业务回滚，抛出特定异常：包含错误消息，错误编码
+     * create time: 15:27 2021/4/13
+     * @param message
+     * @param resultCode
+     * @return
+     */
+    public BusinessException(String message, String resultCode) {
+        super(message);
+        this.code = resultCode;
+    }
 }

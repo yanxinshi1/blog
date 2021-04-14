@@ -18,4 +18,14 @@ public class ExceptionUtil {
             rollback(accountNotExist);
         }
     }
+
+    public static void rollback(String message, String resultCode) {
+        throw new BusinessException(message, resultCode);
+    }
+
+    public static void isRollback(boolean flag, ErrorEnum errorEnum) {
+        if (flag){
+            rollback(errorEnum);
+        }
+    }
 }
