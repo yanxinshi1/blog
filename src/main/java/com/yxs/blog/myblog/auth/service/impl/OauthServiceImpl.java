@@ -1,9 +1,16 @@
 package com.yxs.blog.myblog.auth.service.impl;
 
 import cn.hutool.crypto.SecureUtil;
+
+import com.alibaba.fastjson.JSONObject;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+import com.byteblogs.helloblog.dto.HttpResult;
+import com.byteblogs.helloblog.integration.ByteBlogsClient;
+import com.byteblogs.helloblog.integration.dto.UserDTO;
 import com.yxs.blog.common.base.domain.Result;
 import com.yxs.blog.common.constant.Constants;
+import com.yxs.blog.common.context.BeanTool;
 import com.yxs.blog.common.enums.ErrorEnum;
 import com.yxs.blog.common.util.ExceptionUtil;
 import com.yxs.blog.common.util.JwtUtil;
@@ -14,11 +21,16 @@ import com.yxs.blog.myblog.auth.domain.po.AuthUser;
 import com.yxs.blog.myblog.auth.domain.vo.AuthUserVO;
 import com.yxs.blog.myblog.auth.service.OauthService;
 import com.yxs.blog.system.enmus.RoleEnum;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
-import org.springframework.beans.factory.annotation.Autowired;
 
+
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Service;
+
+
+import java.time.LocalDateTime;
 import java.time.ZoneOffset;
-import java.util.Collection;
 import java.util.Collections;
 import java.util.Date;
 
@@ -28,10 +40,12 @@ import java.util.Date;
  * @author: Yxs
  * @time: 2021/4/5 20:36
  */
+@Service
 public class OauthServiceImpl implements OauthService {
 
     @Autowired
     private AuthUserDao authUserDao;
+
     @Autowired
     private AuthTokenDao authTokenDao;
 
@@ -70,5 +84,57 @@ public class OauthServiceImpl implements OauthService {
         //数据库写入token
         authTokenDao.insert(new AuthToken().setUserId(authUser.getId()).setToken(token).setExpireTime(new Date(Constants.EXPIRE_TIME + System.currentTimeMillis()).toInstant().atOffset(ZoneOffset.of("+8")).toLocalDateTime()));
         return Result.createWithModel(authUserVO);
+    }
+
+    /**
+     * create by: Yxs
+     * description:注册
+     * create time: 15:17 2021/4/13
+     * @param userDTO
+     * @return com.yxs.blog.common.base.domain.Result
+     */
+    @Override
+    public Result registerAdmin(UserDTO userDTO) {
+        AuthUser authUser = authUserDao.selectOne(new LambdaQueryWrapper<AuthUser>()
+                .eq(AuthUser::getRoleId,RoleEnum.ADMIN.getRoleId()));
+        if(authUser == null){
+            //首次注册
+            AuthUserVO authUserVO = fetchRegister(userDTO);
+            authUser = new AuthUser();
+            authUser.setName(userDTO.getEmail());
+            authUser.setEmail(userDTO.getEmail());
+            authUser.setRoleId(RoleEnum.ADMIN.getRoleId());
+            authUser.setPassword(SecureUtil.md5(userDTO.getPassword()));
+            authUser.setCreateTime(LocalDateTime.now());
+            authUser.setAccessKey(authUserVO.getAccessKey()).setSecretKey(authUserVO.getSecretKey());
+            authUserDao.insert(authUser);
+        }else{
+            if (StringUtils.isBlank(authUser.getAccessKey()) || StringUtils.isBlank(authUser.getSecretKey())) {
+                AuthUserVO authUserVO = fetchRegister(userDTO);
+
+                authUserDao.update(authUser
+                                .setEmail(userDTO.getEmail())
+                                .setPassword(SecureUtil.md5(userDTO.getPassword()))
+                                .setAccessKey(authUserVO.getAccessKey())
+                                .setSecretKey(authUserVO.getSecretKey()),
+                        new LambdaUpdateWrapper<AuthUser>().eq(AuthUser::getRoleId, RoleEnum.ADMIN.getRoleId()));
+            } else {
+                ExceptionUtil.isRollback(true, ErrorEnum.ACCOUNT_EXIST);
+            }
+        }
+        return Result.createWithSuccessMessage();
+    }
+
+
+
+
+    private AuthUserVO fetchRegister(UserDTO userDTO) {
+        HttpResult httpResult = BeanTool.getBean(ByteBlogsClient.class).registerUsers(userDTO);
+
+        if (httpResult.getSuccess() == Constants.NO) {
+            ExceptionUtil.rollback(httpResult.getMessage(), httpResult.getResultCode());
+        }
+
+        return JSONObject.parseObject(JSONObject.toJSONString(httpResult.getModel()), AuthUserVO.class);
     }
 }
